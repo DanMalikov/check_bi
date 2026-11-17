@@ -1,0 +1,33 @@
+apiVersion: 1
+prune: true
+datasources:
+  - name: ClickHouse Direct
+    uid: clickhouse-direct
+    type: grafana-clickhouse-datasource
+    access: proxy
+    editable: false
+    jsonData:
+      host: $CLICKHOUSE_HOST
+      port: $CLICKHOUSE_HTTP_PORT
+      protocol: http
+      username: $CLICKHOUSE_USER
+      defaultDatabase: $CLICKHOUSE_DATABASE
+      secure: $CLICKHOUSE_SECURE
+      tlsSkipVerify: $GRAFANA_CLICKHOUSE_TLS_SKIP_VERIFY
+      dialTimeout: $CLICKHOUSE_CONNECT_TIMEOUT
+      queryTimeout: $CLICKHOUSE_QUERY_TIMEOUT
+    secureJsonData:
+      password: $CLICKHOUSE_PASSWORD
+  - name: Telemetry API Infinity
+    uid: telemetry-infinity
+    type: yesoreyeram-infinity-datasource
+    access: proxy
+    editable: false
+    jsonData:
+      auth_method: none
+      allowedHosts:
+        - $TELEMETRY_INTERNAL_URL
+      customHealthCheckEnabled: true
+      customHealthCheckUrl: $TELEMETRY_INTERNAL_URL/health
+      timeout: 60
+      # Parser is a per-query setting. Select Backend / JSONata in each panel.

@@ -1,0 +1,114 @@
+name: telemetry-benchmark
+
+x-clickhouse: &clickhouse
+  CLICKHOUSE_HOST: ${CLICKHOUSE_HOST:-}
+  CLICKHOUSE_HTTP_PORT: ${CLICKHOUSE_HTTP_PORT:-8123}
+  CLICKHOUSE_NATIVE_PORT: ${CLICKHOUSE_NATIVE_PORT:-9000}
+  CLICKHOUSE_DATABASE: ${CLICKHOUSE_DATABASE:-telemetry}
+  CLICKHOUSE_USER: ${CLICKHOUSE_USER:-}
+  CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-}
+  CLICKHOUSE_SECURE: ${CLICKHOUSE_SECURE:-false}
+  CLICKHOUSE_VERIFY: ${CLICKHOUSE_VERIFY:-true}
+  CLICKHOUSE_CONNECT_TIMEOUT: ${CLICKHOUSE_CONNECT_TIMEOUT:-5}
+  CLICKHOUSE_QUERY_TIMEOUT: ${CLICKHOUSE_QUERY_TIMEOUT:-30}
+  CLICKHOUSE_TIMEZONE: ${CLICKHOUSE_TIMEZONE:-UTC}
+
+services:
+  telemetry-api:
+    build: ./telemetry-api
+    environment:
+      <<: *clickhouse
+      SUPERSET_INTERNAL_URL: ${SUPERSET_INTERNAL_URL:-http://superset:8088}
+      SUPERSET_PUBLIC_URL: ${SUPERSET_PUBLIC_URL:-http://localhost:8088}
+      SUPERSET_EMBEDDED_DASHBOARD_ID: ${SUPERSET_EMBEDDED_DASHBOARD_ID:-}
+      SUPERSET_TECH_USER: ${SUPERSET_TECH_USER:-embed_service}
+      SUPERSET_TECH_PASSWORD: ${SUPERSET_TECH_PASSWORD:?Set SUPERSET_TECH_PASSWORD in .env}
+      SUPERSET_API_TIMEOUT: ${SUPERSET_API_TIMEOUT:-30}
+      GRAFANA_INFINITY_DASHBOARD_URL: ${GRAFANA_INFINITY_DASHBOARD_URL:-}
+      GRAFANA_DIRECT_DASHBOARD_URL: ${GRAFANA_DIRECT_DASHBOARD_URL:-}
+      API_DEFAULT_ROWS: ${API_DEFAULT_ROWS:-1000}
+      API_MAX_ROWS: ${API_MAX_ROWS:-10000}
+      API_MAX_RANGE_DAYS: ${API_MAX_RANGE_DAYS:-180}
+      ADMIN_ORIGIN: ${ADMIN_ORIGIN:-http://localhost:5173}
+    volumes:
+      - benchmark_results:/app/benchmark_results
+    ports: ["127.0.0.1:${API_PORT:-8000}:8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  superset:
+    build: ./superset
+    environment:
+      <<: *clickhouse
+      SUPERSET_CONFIG_PATH: /app/pythonpath/superset_config.py
+      SUPERSET_HOME: /app/superset_home
+      SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY:?Set SUPERSET_SECRET_KEY in .env}
+      SUPERSET_GUEST_TOKEN_SECRET: ${SUPERSET_GUEST_TOKEN_SECRET:?Set SUPERSET_GUEST_TOKEN_SECRET in .env}
+      SUPERSET_ADMIN_USER: ${SUPERSET_ADMIN_USER:-admin}
+      SUPERSET_ADMIN_PASSWORD: ${SUPERSET_ADMIN_PASSWORD:?Set SUPERSET_ADMIN_PASSWORD in .env}
+      SUPERSET_ADMIN_EMAIL: ${SUPERSET_ADMIN_EMAIL:-admin@localhost.invalid}
+      SUPERSET_TECH_USER: ${SUPERSET_TECH_USER:-embed_service}
+      SUPERSET_TECH_PASSWORD: ${SUPERSET_TECH_PASSWORD:?Set SUPERSET_TECH_PASSWORD in .env}
+      SUPERSET_GUEST_TOKEN_TTL: ${SUPERSET_GUEST_TOKEN_TTL:-300}
+      ADMIN_ORIGIN: ${ADMIN_ORIGIN:-http://localhost:5173}
+    volumes: ["superset_data:/app/superset_home"]
+    ports: ["127.0.0.1:${SUPERSET_PORT:-8088}:8088"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8088/health')"]
+      interval: 15s
+      timeout: 5s
+      start_period: 180s
+      retries: 10
+    restart: unless-stopped
+
+  grafana:
+    build: ./grafana
+    environment:
+      <<: *clickhouse
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in .env}
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+      GF_PLUGINS_PREINSTALL_AUTO_UPDATE: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: ${GRAFANA_ANONYMOUS_ENABLED:-true}
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: ${GRAFANA_PUBLIC_URL:-http://localhost:3000}
+      TELEMETRY_INTERNAL_URL: ${TELEMETRY_INTERNAL_URL:-http://telemetry-api:8000}
+      GRAFANA_CLICKHOUSE_TLS_SKIP_VERIFY: ${GRAFANA_CLICKHOUSE_TLS_SKIP_VERIFY:-false}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    ports: ["127.0.0.1:${GRAFANA_PORT:-3000}:3000"]
+    depends_on:
+      telemetry-api: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:3000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  admin:
+    build: ./admin
+    ports: ["127.0.0.1:${ADMIN_PORT:-5173}:80"]
+    depends_on:
+      telemetry-api: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+networks:
+  default:
+    name: telemetry-benchmark
+volumes:
+  benchmark_results:
+  grafana_data:
+  superset_data:

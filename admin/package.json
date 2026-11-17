@@ -1,0 +1,9 @@
+{
+  "name": "telemetry-benchmark-admin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {"build": "vite build"},
+  "dependencies": {"@superset-ui/embedded-sdk": "0.2.0"},
+  "devDependencies": {"vite": "6.4.6"}
+}
